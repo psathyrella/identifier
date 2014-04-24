@@ -29,13 +29,15 @@ class Searcher(object):
                 if len(self.matches[region]) != 0:
                     self.excise_match(region)   # if there's a good match cut it out. TODO change 'good' criterion
             if not self.is_matched(region):
-                print '\n  dammit %s still not matched: %s' % (region, self.current_seq),
-#                get_matches(hmmdir, region, current_seq, is_matched, n_tries, inline[region + '_gene'], is_correct, debug=True)
+#                print '\n  dammit %s still not matched: %s' % (region, self.current_seq),
+                self.get_matches(region)
 
     def get_matches(self, region, debug=False):
         """ Look for matches for <region>. """
         sensitivity = ''
-        if self.n_tries[region] > 0:
+        if self.n_tries[region] == 1:
+            sensitivity = 'more'
+        elif self.n_tries[region] > 1:
             sensitivity = 'max'
         hmmerer = Hmmerer(self.hmmerdir, region, self.current_seq, sensitivity=sensitivity)
         hmmerer.run()

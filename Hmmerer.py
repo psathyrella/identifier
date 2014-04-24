@@ -1,11 +1,12 @@
 """ Execute search with proper hmmer binary, and store output in a dict. """
 
-from subprocess import check_output
+import sys
+from subprocess import check_call,check_output
 
 #----------------------------------------------------------------------------------------
 def sanitize_header_line(line):
     """ Really, dude? You couldn't make the damn headers one word each? """
-    line = line.replace('#', '')
+    line = line.lstrip('#')
     line = line.replace('target name', 'target_name')
     line = line.replace('query name', 'query_name')
     line = line.replace('hmmfrom', 'hmm_from')
@@ -19,6 +20,18 @@ def sanitize_header_line(line):
     return line
 
 #----------------------------------------------------------------------------------------
+def sanitize_hmmscan_header_line(line):
+    """ *and* you had to make it a *two* line header for hmmscan? """
+    # NOTE this assumes the order is hmm, ali, env
+    line = line.replace(' from', 'hmm_from', 1)
+    line = line.replace(' to', 'hmm_to', 1)
+    line = line.replace(' from', 'ali_from', 1)
+    line = line.replace(' to', 'ali_to', 1)
+    line = line.replace(' from', 'env_from', 1)
+    line = line.replace(' to', 'env_to', 1)
+    return line
+
+#----------------------------------------------------------------------------------------
 class Hmmerer(object):
     """ ya what it says up there yo """
 
@@ -26,6 +39,7 @@ class Hmmerer(object):
         self.region = region
         self.seq = seq
         self.sensitivity = sensitivity
+        self.binary = 'nhmmscan'
         self.command = self.build_command(hmmerdir)
         self.output = ''  # raw output from hmmer
         self.matches = []
@@ -34,24 +48,44 @@ class Hmmerer(object):
         """ Build hmmer command. """
         hmm_dbase_file = 'data/hmms/' + self.region + '/all.hmm'
         query_seq_command = 'echo \"> test seq file\n' + self.seq + '\n\"'  # command to generate query sequence 'file': pipe it to hmmer to avoid writing to disk
-        binary = '/bin/bash -c \"' + hmmerdir + '/binaries/nhmmscan'
-        options = '--tblout >(cat)'
-        if self.sensitivity == 'max':
+        options = ''
+        if self.sensitivity == 'more':
             options += ' --max'
-            # binary = binary.replace('nhmmscan', 'hmmscan')  # docs are a little unclear on the real differences -- but in practice hmmscan gets more matches
+        elif self.sensitivity == 'max':
+            options += ' --max -E 1000 --incE 1000 '
+            self.binary = 'hmmscan'  # protein version (hmmscan rather than nhmmscan) seems to be more sensitive
         else:
             assert self.sensitivity == ''
 
-        return query_seq_command + ' | ' + binary + ' ' + options + ' ' + hmm_dbase_file + ' - >/dev/null\"'
+        std_out_treatment = ''
+        if self.binary == 'nhmmscan':
+            options += ' --tblout >(cat)'
+            std_out_treatment = '>/dev/null'  # for nhmmscan, we only need the tblout output, so redirect throw out the regular output
+        elif self.binary == 'hmmscan':  # whereas for some **!#&$! reason hmmscan doesn't report the alignment start and end positions in its tfjfjfjffj
+            options += ' --domtblout >(cat)'
+            std_out_treatment = '>/dev/null'
+        else:
+            assert False  # er, case not covered, so yer prolly screwed anyway
+        # here the '-' is the seq file:
+        return query_seq_command + ' | /bin/bash -c \"' + hmmerdir + '/binaries/' + self.binary + ' ' + options + ' ' + hmm_dbase_file + ' - ' + std_out_treatment + '\"'
 
     def run(self):
         self.output = check_output(self.command, shell=True)
         self.parse_output()
+#        if self.sensitivity == 'max' and len(self.matches) == 0:
+#            print '\nno matches with max sensitivity\n'
+#            check_call(self.command.replace('>/dev/null','| grep IGH'), shell=True)
+#            sys.exit()
 
     def parse_output(self):
         assert len(self.matches) == 0  # um, no particular reason to suspect otherwise a.t.m.
         outlines = self.output.splitlines()
         header_line = sanitize_header_line(outlines[0])
+        if self.binary == 'hmmscan':
+#            check_call(self.command, shell=True)
+#            sys.exit()
+            header_line = sanitize_header_line(outlines[1])  # NOTE this is the overall *sequence* evalue I'm pulling out here. I don't care a.t.m., but keep it in mind
+            header_line = sanitize_hmmscan_header_line(header_line)
         # make a dict so we don't have to remember the order
         indices = {}
         for icol in range(len(header_line.split())):
