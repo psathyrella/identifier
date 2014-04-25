@@ -2,6 +2,7 @@
 
 import sys
 from subprocess import check_call,check_output
+from itertools import dropwhile
 
 #----------------------------------------------------------------------------------------
 def sanitize_header_line(line):
@@ -50,7 +51,7 @@ class Hmmerer(object):
         query_seq_command = 'echo \"> test seq file\n' + self.seq + '\n\"'  # command to generate query sequence 'file': pipe it to hmmer to avoid writing to disk
         options = ''
         if self.sensitivity == 'more':
-            options += ' --max'
+            options += ' --max -E 1000 --incE 1000 '
         elif self.sensitivity == 'max':
             options += ' --max -E 1000 --incE 1000 '
             self.binary = 'hmmscan'  # protein version (hmmscan rather than nhmmscan) seems to be more sensitive
@@ -59,17 +60,18 @@ class Hmmerer(object):
 
         std_out_treatment = ''
         if self.binary == 'nhmmscan':
-            options += ' --tblout >(cat)'
-            std_out_treatment = '>/dev/null'  # for nhmmscan, we only need the tblout output, so redirect throw out the regular output
+            options += ' --tblout >(sed s/^/-TBLOUT-/)' #' --tblout >(cat)'
+            std_out_treatment = '' #'>/dev/null'  # for nhmmscan, we only need the tblout output, so redirect throw out the regular output
         elif self.binary == 'hmmscan':  # whereas for some **!#&$! reason hmmscan doesn't report the alignment start and end positions in its tfjfjfjffj
-            options += ' --domtblout >(cat)'
-            std_out_treatment = '>/dev/null'
+            options += ' --domtblout >(sed s/^/-TBLOUT-/)'
+            std_out_treatment = ''
         else:
             assert False  # er, case not covered, so yer prolly screwed anyway
         # here the '-' is the seq file:
         return query_seq_command + ' | /bin/bash -c \"' + hmmerdir + '/binaries/' + self.binary + ' ' + options + ' ' + hmm_dbase_file + ' - ' + std_out_treatment + '\"'
 
     def run(self):
+#        print 'running hmmer with %s' % self.seq
         self.output = check_output(self.command, shell=True)
         self.parse_output()
 #        if self.sensitivity == 'max' and len(self.matches) == 0:
@@ -80,11 +82,12 @@ class Hmmerer(object):
     def parse_output(self):
         assert len(self.matches) == 0  # um, no particular reason to suspect otherwise a.t.m.
         outlines = self.output.splitlines()
-        header_line = sanitize_header_line(outlines[0])
+        outlines = dropwhile(lambda line: line.find('-TBLOUT-') < 0, outlines)
+        header_line = sanitize_header_line(outlines.next().replace('-TBLOUT-',''))
+            
         if self.binary == 'hmmscan':
-#            check_call(self.command, shell=True)
-#            sys.exit()
-            header_line = sanitize_header_line(outlines[1])  # NOTE this is the overall *sequence* evalue I'm pulling out here. I don't care a.t.m., but keep it in mind
+#            outlines.next()
+            header_line = sanitize_header_line(outlines.next().replace('-TBLOUT-',''))  # NOTE this is the overall *sequence* evalue I'm pulling out here. I don't care a.t.m., but keep it in mind
             header_line = sanitize_hmmscan_header_line(header_line)
         # make a dict so we don't have to remember the order
         indices = {}
@@ -92,6 +95,7 @@ class Hmmerer(object):
             column = header_line.split()[icol]
             indices[column] = icol
         for outline in outlines:
+            outline = outline.replace('-TBLOUT-','')
             if outline[0] == '#':
                 continue
             outline = outline.split()
@@ -100,13 +104,9 @@ class Hmmerer(object):
             for column in ['hmm_from', 'hmm_to', 'ali_from', 'ali_to']:
                 entry[column] = int(outline[indices[column]])
             entry['evalue'] = float(outline[indices['evalue']])
+            if entry['ali_from'] > entry['ali_to']:
+                print '    skipping reverse match %d %d' % (entry['ali_from'], entry['ali_to'])
+                continue
             self.matches.append(entry)
             if len(self.matches) > 1:  # only look at the first two matches a.t.m.
                 break
-    
-    #    if len(matches) == 0:  # no matches
-    #        print ' (none)',
-    #    else:
-    #        print ' (' + matches[0]['target_name']+ ')',
-            
-            

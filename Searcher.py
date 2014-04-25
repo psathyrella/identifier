@@ -1,17 +1,22 @@
 """ Run hmmer via the Hmmerer class, and make all the decisions about search order, strategies, heuristics, & co. """
 
+import sys
+from itertools import takewhile, dropwhile, tee
+
 import partutils
 from Hmmerer import Hmmerer
 
 class Searcher(object):
     """ same ol shit """
-    def __init__(self, query_line):
+    def __init__(self, query_line, debug=False):
+        self.debug = debug
         self.hmmerdir = '/home/dralph/Dropbox/work/hmmer/hmmer-3.1b1-linux-intel-x86_64'
         self.seq = query_line['seq']
         self.current_seq = self.seq  # we will in general excise parts of the original sequence, and store the result in current_seq
         self.n_tries = {}  # how many tries for this region?
         self.matches = {}
         self.best_matches = {}
+        self.excisions = []
         for region in partutils.regions:
             self.n_tries[region] = 0
             self.matches[region] = []
@@ -31,6 +36,8 @@ class Searcher(object):
             if not self.is_matched(region):
 #                print '\n  dammit %s still not matched: %s' % (region, self.current_seq),
                 self.get_matches(region)
+                if len(self.matches[region]) != 0:
+                    self.excise_match(region)   # if there's a good match cut it out. TODO change 'good' criterion
 
     def get_matches(self, region, debug=False):
         """ Look for matches for <region>. """
@@ -41,9 +48,10 @@ class Searcher(object):
             sensitivity = 'max'
         hmmerer = Hmmerer(self.hmmerdir, region, self.current_seq, sensitivity=sensitivity)
         hmmerer.run()
+#        print hmmerer.output
         self.n_tries[region] += 1
         self.matches[region] = hmmerer.matches
-        self.find_best_match(region)
+        self.find_best_match(hmmerer, region)
 
     def is_matched(self, region):
         """ Have we found matches for this region? """
@@ -55,18 +63,27 @@ class Searcher(object):
         else:
             return self.best_matches[region]['target_name']
 
-    def find_best_match(self, region):
-        if len(self.matches[region]) == 1:
-            self.best_matches[region] = self.matches[region][0]
-        else:
-            best_evalue = 999.0
-            for match in self.matches[region]:
-                if match['evalue'] < best_evalue:
-                    best_evalue = match['evalue']
-                    self.best_matches[region] = match
+    def find_best_match(self, hmmerer, region):
+        print '  looking for best match of %d' % len(self.matches[region])
+        best_evalue = 999.0
+        for match in self.matches[region]:
+            if match['ali_from'] > match['ali_to']:
+                print '  REVERSE %d --> %d (skipping)' % (match['ali_from'],match['ali_to'])
+                continue
+            self.get_matching_section(hmmerer, match)  # fill output section in this match
+            if '.' in match['hmm_seq']:  # remove matches with deletions from consideration
+                print '  eliminating match with deletion %s' % match['hmm_seq'].upper()
+                continue
+            if match['evalue'] < best_evalue:
+                best_evalue = match['evalue']
+                self.best_matches[region] = match
 
         if len(self.matches[region]) > 0:
-               len(self.best_matches[region]) != 0
+            try:
+                assert len(self.best_matches[region]) != 0  # um, was that what I meant to do here?
+            except:
+                print self.best_matches
+                sys.exit()
 
     def excise_match(self, region):
         """ Remove best_match from current_seq.
@@ -80,4 +97,150 @@ class Searcher(object):
         excise_from = self.best_matches[region]['ali_from'] - 1
         excise_to = self.best_matches[region]['ali_to'] - 1
 
+        if region == 'v' and excise_from != 0:
+            excise_from = 0
+            assert len(self.current_seq[:excise_from]) == 0
+            print '   expanding v excision to zero'
+        if region == 'j' and excise_to != len(self.current_seq) - 1:
+            excise_to = len(self.current_seq) - 1
+            assert len(self.current_seq[excise_to + 1 :]) == 0
+            print '   expanding j excision to %d' % (len(self.current_seq) - 1)
+
+        self.excisions.append({'region': region, 'from': excise_from, 'to': excise_to})
+        print '    excising from %d to %d: %s --> %s' % (excise_from, excise_to, self.current_seq, self.current_seq[:excise_from] + self.current_seq[excise_to + 1 :])
         self.current_seq = self.current_seq[:excise_from] + self.current_seq[excise_to + 1 :]
+
+    def build_inferred_seq(self, seq, all_germlines, outline):
+        assert self.excisions[0]['region'] == 'v'  # makes it easier a.t.m.
+        assert self.excisions[1]['region'] == 'j'
+        assert self.excisions[2]['region'] == 'd'
+        germlines, hmms, ihmms = {}, {}, {}
+        for region in partutils.regions:
+            germlines[region] = all_germlines[region][partutils.unsanitize_name(self.best_matches[region]['target_name'])]
+            hmms[region] = self.best_matches[region]['hmm_seq']
+            ihmms[region] = germlines[region].find(hmms[region].upper())  # position at which the consensus (hmm) starts in the germline sequence
+            try:
+                assert ihmms[region] >= 0
+            except:
+                print germlines[region]
+                print hmms[region].upper()
+                print ihmms[region]
+                assert False
+            print '  hmm for %s runs from %d to %d (inclusive)' % (region, ihmms[region], ihmms[region] + len(hmms[region]) - 1)
+
+        outline['v_5p_del'] = ihmms['v'] # TODO kinda otter be zero
+        outline['v_3p_del'] = len(germlines['v']) - ihmms['v'] - len(hmms['v']) # len(germlines['v']) - len(hmms['v']) - germlines['v'].find(hmms['v'].upper())
+        outline['d_5p_del'] = ihmms['d'] # germlines['d'].find(hmms['d'].upper())
+        outline['d_3p_del'] = len(germlines['d']) - ihmms['d'] - len(hmms['d']) # len(germlines['d']) - len(hmms['d']) - germlines['d'].find(hmms['d'].upper())
+        outline['j_5p_del'] = ihmms['j'] # germlines['j'].find(hmms['j'].upper())
+        outline['j_3p_del'] = len(germlines['j']) - ihmms['j'] - len(hmms['j'])  # TODO kinda otter be zero
+
+        for ex in self.excisions:
+            match = self.best_matches[ex['region']]
+            print '  excised match %s: %d --> %d' % (ex['region'], ex['from'], ex['to'])
+            print '        test %s' % match['test_seq']
+            hmm_start = ihmms[ex['region']]
+            hmm_end = ihmms[ex['region']] + len(hmms[ex['region']]) - 1
+#            hmm_ali_start = int(match['hmm_from'])
+#            hmm_ali_end = int(match['hmm_to'])
+            print '         hmm %s' % (hmm_start * '.' + match['hmm_seq'].upper() + (len(germlines[ex['region']]) - ihmms[ex['region']] - len(hmms[ex['region']])) * '.')  # NOTE ali_from includes the d part!
+#            print '         hmm %s' % match['hmm_seq']
+            print '    germline %s' % all_germlines[ex['region']][partutils.unsanitize_name(match['target_name'])]
+#            all_germlines[ex['region']] = all_germlines[ex['region']][partutils.unsanitize_name(match['target_name'])]
+#            hmms[ex['region']] = match['test_seq']
+#            assert all_germlines[ex['region']].find(hmms[ex['region']]) >= 0
+
+#        #----------------------------------------------------------------------------------------
+#        v_ex = self.excisions[0]
+#        j_ex = self.excisions[1]
+#        d_ex = self.excisions[2]
+#        if v_ex['from'] != 0:
+#            print 'WARNING v_ex non-zero'
+#        # NOTE these _start and _end values are *inclusive*
+#        v_match_start = self.best_matches['v']['ali_from'] - 1
+#        v_match_end = self.best_matches['v']['ali_to'] - 1
+#        j_match_start = self.best_matches['j']['ali_from'] - 1 + v_ex['to'] + 1
+#        j_match_end = self.best_matches['j']['ali_to'] - 1 + v_ex['to'] + 1
+#        d_match_start = self.best_matches['d']['ali_from'] - 1 + v_ex['to'] + 1
+#        d_match_end = self.best_matches['d']['ali_to'] - 1 + v_ex['to'] + 1
+#        outline['vd_insertion'] = seq[v_match_end+1 : d_match_start]
+#        outline['dj_insertion'] = seq[d_match_end+1 : j_match_start]
+#        #----------------------------------------------------------------------------------------
+        # NOTE these are inclusive
+        seq_match_start, seq_match_end = {}, {}
+        seq_match_start['v'] = self.best_matches['v']['ali_from'] - 1
+        seq_match_end['v'] = seq_match_start['v'] + len(hmms['v']) - 1
+        seq_match_start['d'] = self.excisions[0]['to'] - self.excisions[0]['from'] + self.best_matches['d']['ali_from']
+        seq_match_end['d'] = seq_match_start['d'] + len(hmms['d']) - 1
+        seq_match_start['j'] = self.excisions[0]['to'] - self.excisions[0]['from'] + self.best_matches['j']['ali_from']
+        seq_match_end['j'] = seq_match_start['j'] + len(hmms['j']) - 1
+#        for region in partutils.regions:
+#            print region,seq_match_start[region], seq_match_end[region]
+        outline['vd_insertion'] = seq[seq_match_end['v']+1 : seq_match_start['d']]
+        outline['dj_insertion'] = seq[seq_match_end['d']+1 : seq_match_start['j']]
+
+#        for key,val in outline.iteritems():
+#            print '%22s %22s' % (key,val)
+        actual_seq_length = len(seq)
+        inferred_seq_length = outline['v_5p_del'] + len(hmms['v']) + len(outline['vd_insertion']) + len(hmms['d']) + len(outline['dj_insertion']) + len(hmms['j']) + outline['j_3p_del']
+        print '    ',actual_seq_length,inferred_seq_length
+        if actual_seq_length != inferred_seq_length:
+            outline['ack'] = True
+
+#        outline['v_3p_del'] = self.best_matches['v']['hmm_to'] - 1  # TODO these aren't right if the hmm coords aren't the same as the germline coords
+#        outline['d_5p_del'] = self.best_matches['d']['hmm_from'] - 1
+#        outline['d_3p_del'] = self.best_matches['d']['hmm_to'] - 1
+#        outline['j_5p_del'] = self.best_matches['j']['hmm_from'] - 1
+#        print seq[v_match_start : v_match_end+1]
+#        print vd_insertion
+#        print seq[j_match_start : j_match_end+1]
+#        print dj_insertion
+#        print seq[d_match_start : d_match_end+1]
+
+    def get_matching_section(self, hmmerer, match):
+        if len(match) == 0:
+            return
+        if self.debug:
+            print '  getting detailed info for best match %s' % match['target_name']
+        output = takewhile(lambda line: line.find('-TBLOUT-') < 0, hmmerer.output.splitlines())  # verbose output from hmmer
+        output = dropwhile(lambda line: line.find('>> ' + match['target_name']) < 0, output)  # drop until you get to the block on this gene
+        try:
+            output.next()
+        except:
+            print hmmerer.output
+            assert False
+        output = takewhile(lambda line: line.find('>> IGH') < 0, output)  # drop the next block
+        output = dropwhile(lambda line: line.find(match['target_name']) < 0, output)
+        output = takewhile(lambda line: line.find('Internal pipeline') < 0, output)  # kill pipeline statistics
+        if self.debug:
+            output, debug_output = tee(output)
+            for line in debug_output:
+                print '     -->    ',line
+        hmm_seq, matching_position_line, test_seq, probabilities = '', '', '', ''
+        for line in output:
+            # TODO I think this will fail if there's indels in the interior
+            if len(line) == 0:
+                continue
+            # first get the germline line
+            line = line.split()
+            if line[0] != match['target_name']:
+                print hmmerer.output
+            assert line[0] == match['target_name']
+            start_position = line[1]  # start position of this match
+            hmm_seq += line[2]
+            end_position = line[3]
+            # then get the line with positions at which they match
+            matching_position_line +=  output.next()  # screwed up with extra spaces at the start, but I'm not using it a.t.m.
+            # then the line for the test sequence
+            line = output.next().split()
+            assert line[0] == 'test'
+#            assert line[1] == start_position  # um, maybe not?
+            test_seq += line[2]
+#            assert line[3] == end_position  # um, maybe not?
+            # and finally, get the probability line
+            probabilities += output.next().split()[0]
+        match['hmm_seq'] = hmm_seq
+#        match[region + '_5p_del'] = match['hmm_from'] - 1
+#        # TODO is hmm the same length as the germline gene?
+#        match[region + '_3p_del'] = 0 #len(hmm_seq) - match['hmm_to'] - 1
+        match['test_seq'] = test_seq
