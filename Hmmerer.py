@@ -36,7 +36,8 @@ def sanitize_hmmscan_header_line(line):
 class Hmmerer(object):
     """ ya what it says up there yo """
 
-    def __init__(self, hmmerdir, region, seq, sensitivity=''):
+    def __init__(self, hmmerdir, region, seq, sensitivity='', n_matches_max=999):
+        self.n_matches_max = n_matches_max  # only look at the first n matches
         self.region = region
         self.seq = seq
         self.sensitivity = sensitivity
@@ -71,8 +72,9 @@ class Hmmerer(object):
         return query_seq_command + ' | /bin/bash -c \"' + hmmerdir + '/binaries/' + self.binary + ' ' + options + ' ' + hmm_dbase_file + ' - ' + std_out_treatment + '\"'
 
     def run(self):
-#        print 'running hmmer with %s' % self.seq
         self.output = check_output(self.command, shell=True)
+        # HIDEOUS HACK hmmer is producing two streams, tblout and stdout, and I pipe them to the same place. Which works ok mostly because one is printed before the other. Except sometimes the [ok]\n ends up in the middle of the tblout output which causes general mayhem
+        self.output = self.output.replace('[ok]\n','')
         self.parse_output()
 #        if self.sensitivity == 'max' and len(self.matches) == 0:
 #            print '\nno matches with max sensitivity\n'
@@ -108,5 +110,5 @@ class Hmmerer(object):
                 print '    skipping reverse match %d %d' % (entry['ali_from'], entry['ali_to'])
                 continue
             self.matches.append(entry)
-            if len(self.matches) > 1:  # only look at the first two matches a.t.m.
+            if len(self.matches) >= self.n_matches_max:
                 break

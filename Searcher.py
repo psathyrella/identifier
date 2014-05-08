@@ -8,7 +8,8 @@ import utils
 
 class Searcher(object):
     """ same ol shit """
-    def __init__(self, query_line, debug=False):
+    def __init__(self, query_line, debug=False, n_matches_max=999):
+        self.n_matches_max = n_matches_max
         self.debug = debug
         self.hmmerdir = '/home/dralph/Dropbox/work/hmmer/hmmer-3.1b1-linux-intel-x86_64'
         self.seq = query_line['seq']

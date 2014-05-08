@@ -3,8 +3,6 @@ import csv
 import os
 import sys
 
-from Bio import SeqIO
-
 from opener import opener
 import utils
 from Searcher import Searcher
@@ -33,21 +31,13 @@ def build_hmms():
         pressfile.writelines(all_lines)
     call(['../binaries/hmmpress', '-f', outdir + '/all.hmm'])
 
-def read_germlines():
-    germlines = {}
-    for region in utils.regions:
-        germlines[region] = {}
-        for seq_record in SeqIO.parse('../../../recombinator/data/igh'+region+'.fasta', "fasta"):
-            germlines[region][seq_record.name] = str(seq_record.seq)
-    return germlines
-
 #build_hmms()
 with opener('r')('head-simulated-seqs.csv') as infile:
-    germlines = read_germlines()
+    germlines = utils.read_germlines('../../../recombinator')
     reader = csv.DictReader(infile)
     for inline in reader:
         print 'searching'
-        searcher = Searcher(inline, debug=True)
+        searcher = Searcher(inline, debug=True, n_matches_max=2)
         searcher.search()
         inferred_group_str = ''
         true_group_str = ''
