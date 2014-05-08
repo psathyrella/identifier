@@ -3,8 +3,8 @@
 import sys
 from itertools import takewhile, dropwhile, tee
 
-import partutils
 from Hmmerer import Hmmerer
+import utils
 
 class Searcher(object):
     """ same ol shit """
@@ -17,27 +17,34 @@ class Searcher(object):
         self.matches = {}
         self.best_matches = {}
         self.excisions = []
-        for region in partutils.regions:
+        for region in utils.regions:
             self.n_tries[region] = 0
             self.matches[region] = []
             self.best_matches[region] = {}
         
+    def all_matched(self):
+        """ Do we have at least one match for each region? """
+        return ((len(self.best_matches['v']) > 0) and
+                (len(self.best_matches['d']) > 0) and
+                (len(self.best_matches['j']) > 0))
+        
     def search(self):
         for region in ['v', 'j', 'd']:  # do d last
             self.get_matches(region)
-            if len(self.matches[region]) != 0:
+            if len(self.matches[region]) != 0 and len(self.best_matches[region]) != 0:
                 self.excise_match(region)   # if there's a good match cut it out. TODO change 'good' criterion
         # now try again!
         for region in ['v', 'j', 'd']:  # do d last, still
             if not self.is_matched(region):
                 self.get_matches(region)
-                if len(self.matches[region]) != 0:
+                if len(self.matches[region]) != 0 and len(self.best_matches[region]) != 0:
                     self.excise_match(region)   # if there's a good match cut it out. TODO change 'good' criterion
             if not self.is_matched(region):
-#                print '\n  dammit %s still not matched: %s' % (region, self.current_seq),
                 self.get_matches(region)
-                if len(self.matches[region]) != 0:
+                if len(self.matches[region]) != 0 and len(self.best_matches[region]) != 0:
                     self.excise_match(region)   # if there's a good match cut it out. TODO change 'good' criterion
+                else:
+                    print '  WARNING no matches found'
 
     def get_matches(self, region, debug=False):
         """ Look for matches for <region>. """
@@ -58,7 +65,7 @@ class Searcher(object):
         return len(self.matches[region]) != 0
 
     def get_best_match_name(self, region):
-        if len(self.matches[region]) == 0:
+        if len(self.matches[region]) == 0 or len(self.best_matches[region]) == 0:
             return 'none'
         else:
             return self.best_matches[region]['target_name']
@@ -74,6 +81,9 @@ class Searcher(object):
             if '.' in match['hmm_seq']:  # remove matches with deletions from consideration
                 print '  eliminating match with deletion %s' % match['hmm_seq'].upper()
                 continue
+            if '-' in match['test_seq']:  # remove matches with deletions from consideration
+                print '  eliminating match with deletion %s' % match['test_seq']
+                continue
             if match['evalue'] < best_evalue:
                 best_evalue = match['evalue']
                 self.best_matches[region] = match
@@ -82,8 +92,9 @@ class Searcher(object):
             try:
                 assert len(self.best_matches[region]) != 0  # um, was that what I meant to do here?
             except:
-                print self.best_matches
-                sys.exit()
+                print '    ',self.best_matches
+                print '    WARNING matches, but no best matches?'
+#                sys.exit()
 
     def excise_match(self, region):
         """ Remove best_match from current_seq.
@@ -115,8 +126,8 @@ class Searcher(object):
         assert self.excisions[1]['region'] == 'j'
         assert self.excisions[2]['region'] == 'd'
         germlines, hmms, ihmms = {}, {}, {}
-        for region in partutils.regions:
-            germlines[region] = all_germlines[region][partutils.unsanitize_name(self.best_matches[region]['target_name'])]
+        for region in utils.regions:
+            germlines[region] = all_germlines[region][utils.unsanitize_name(self.best_matches[region]['target_name'])]
             hmms[region] = self.best_matches[region]['hmm_seq']
             ihmms[region] = germlines[region].find(hmms[region].upper())  # position at which the consensus (hmm) starts in the germline sequence
             try:
@@ -141,31 +152,10 @@ class Searcher(object):
             print '        test %s' % match['test_seq']
             hmm_start = ihmms[ex['region']]
             hmm_end = ihmms[ex['region']] + len(hmms[ex['region']]) - 1
-#            hmm_ali_start = int(match['hmm_from'])
-#            hmm_ali_end = int(match['hmm_to'])
             print '         hmm %s' % (hmm_start * '.' + match['hmm_seq'].upper() + (len(germlines[ex['region']]) - ihmms[ex['region']] - len(hmms[ex['region']])) * '.')  # NOTE ali_from includes the d part!
-#            print '         hmm %s' % match['hmm_seq']
-            print '    germline %s' % all_germlines[ex['region']][partutils.unsanitize_name(match['target_name'])]
-#            all_germlines[ex['region']] = all_germlines[ex['region']][partutils.unsanitize_name(match['target_name'])]
-#            hmms[ex['region']] = match['test_seq']
-#            assert all_germlines[ex['region']].find(hmms[ex['region']]) >= 0
+            print '    germline %s' % all_germlines[ex['region']][utils.unsanitize_name(match['target_name'])]
 
-#        #----------------------------------------------------------------------------------------
-#        v_ex = self.excisions[0]
-#        j_ex = self.excisions[1]
-#        d_ex = self.excisions[2]
-#        if v_ex['from'] != 0:
-#            print 'WARNING v_ex non-zero'
-#        # NOTE these _start and _end values are *inclusive*
-#        v_match_start = self.best_matches['v']['ali_from'] - 1
-#        v_match_end = self.best_matches['v']['ali_to'] - 1
-#        j_match_start = self.best_matches['j']['ali_from'] - 1 + v_ex['to'] + 1
-#        j_match_end = self.best_matches['j']['ali_to'] - 1 + v_ex['to'] + 1
-#        d_match_start = self.best_matches['d']['ali_from'] - 1 + v_ex['to'] + 1
-#        d_match_end = self.best_matches['d']['ali_to'] - 1 + v_ex['to'] + 1
-#        outline['vd_insertion'] = seq[v_match_end+1 : d_match_start]
-#        outline['dj_insertion'] = seq[d_match_end+1 : j_match_start]
-#        #----------------------------------------------------------------------------------------
+        #----------------------------------------------------------------------------------------
         # NOTE these are inclusive
         seq_match_start, seq_match_end = {}, {}
         seq_match_start['v'] = self.best_matches['v']['ali_from'] - 1
@@ -174,28 +164,15 @@ class Searcher(object):
         seq_match_end['d'] = seq_match_start['d'] + len(hmms['d']) - 1
         seq_match_start['j'] = self.excisions[0]['to'] - self.excisions[0]['from'] + self.best_matches['j']['ali_from']
         seq_match_end['j'] = seq_match_start['j'] + len(hmms['j']) - 1
-#        for region in partutils.regions:
-#            print region,seq_match_start[region], seq_match_end[region]
         outline['vd_insertion'] = seq[seq_match_end['v']+1 : seq_match_start['d']]
         outline['dj_insertion'] = seq[seq_match_end['d']+1 : seq_match_start['j']]
 
-#        for key,val in outline.iteritems():
-#            print '%22s %22s' % (key,val)
         actual_seq_length = len(seq)
         inferred_seq_length = outline['v_5p_del'] + len(hmms['v']) + len(outline['vd_insertion']) + len(hmms['d']) + len(outline['dj_insertion']) + len(hmms['j']) + outline['j_3p_del']
-        print '    ',actual_seq_length,inferred_seq_length
+        print '    actual %d  inferred %d' % (actual_seq_length,inferred_seq_length)
         if actual_seq_length != inferred_seq_length:
+            
             outline['ack'] = True
-
-#        outline['v_3p_del'] = self.best_matches['v']['hmm_to'] - 1  # TODO these aren't right if the hmm coords aren't the same as the germline coords
-#        outline['d_5p_del'] = self.best_matches['d']['hmm_from'] - 1
-#        outline['d_3p_del'] = self.best_matches['d']['hmm_to'] - 1
-#        outline['j_5p_del'] = self.best_matches['j']['hmm_from'] - 1
-#        print seq[v_match_start : v_match_end+1]
-#        print vd_insertion
-#        print seq[j_match_start : j_match_end+1]
-#        print dj_insertion
-#        print seq[d_match_start : d_match_end+1]
 
     def get_matching_section(self, hmmerer, match):
         if len(match) == 0:
