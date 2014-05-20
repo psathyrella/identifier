@@ -1,8 +1,12 @@
 """ Execute search with proper hmmer binary, and store output in a dict. """
 
 import sys
+import os
 from subprocess import check_call,check_output
 from itertools import dropwhile
+from operator import itemgetter
+
+from opener import opener
 
 #----------------------------------------------------------------------------------------
 def sanitize_header_line(line):
@@ -34,21 +38,25 @@ def sanitize_hmmscan_header_line(line):
 
 #----------------------------------------------------------------------------------------
 class Hmmerer(object):
-    """ ya what it says up there yo """
+    """ Execute search with proper hmmer binary, and store output in a dict. """
 
-    def __init__(self, hmmerdir, region, seq, sensitivity='', n_matches_max=999):
+    def __init__(self, hmmerdir, region, seq, sensitivity='', n_matches_max=999, debug=False):
+        self.debug = debug
         self.n_matches_max = n_matches_max  # only look at the first n matches
         self.region = region
         self.seq = seq
         self.sensitivity = sensitivity
         self.binary = 'nhmmscan'
-        self.command = self.build_command(hmmerdir)
         self.output = ''  # raw output from hmmer
+        self.table_output = ''
+        self.tblout_fname = 'tmp/tblout-' + str(os.getpid())
         self.matches = []
+        self.command = self.build_command(hmmerdir)
 
     def build_command(self, hmmerdir):
         """ Build hmmer command. """
         hmm_dbase_file = 'data/hmms/' + self.region + '/all.hmm'
+        assert len(self.seq) > 0
         query_seq_command = 'echo \"> test seq file\n' + self.seq + '\n\"'  # command to generate query sequence 'file': pipe it to hmmer to avoid writing to disk
         options = ''
         if self.sensitivity == 'more':
@@ -59,22 +67,20 @@ class Hmmerer(object):
         else:
             assert self.sensitivity == ''
 
-        std_out_treatment = ''
         if self.binary == 'nhmmscan':
-            options += ' --tblout >(sed s/^/-TBLOUT-/)' #' --tblout >(cat)'
-            std_out_treatment = '' #'>/dev/null'  # for nhmmscan, we only need the tblout output, so redirect throw out the regular output
+            options += ' --tblout ' + self.tblout_fname
         elif self.binary == 'hmmscan':  # whereas for some **!#&$! reason hmmscan doesn't report the alignment start and end positions in its tfjfjfjffj
-            options += ' --domtblout >(sed s/^/-TBLOUT-/)'
-            std_out_treatment = ''
+            options += ' --domtblout ' + self.tblout_fname
         else:
             assert False  # er, case not covered, so yer prolly screwed anyway
         # here the '-' is the seq file:
-        return query_seq_command + ' | /bin/bash -c \"' + hmmerdir + '/binaries/' + self.binary + ' ' + options + ' ' + hmm_dbase_file + ' - ' + std_out_treatment + '\"'
+        return query_seq_command + ' | /bin/bash -c \"' + hmmerdir + '/binaries/' + self.binary + ' ' + options + ' ' + hmm_dbase_file + ' - ' + '\"'
 
     def run(self):
         self.output = check_output(self.command, shell=True)
-        # HIDEOUS HACK hmmer is producing two streams, tblout and stdout, and I pipe them to the same place. Which works ok mostly because one is printed before the other. Except sometimes the [ok]\n ends up in the middle of the tblout output which causes general mayhem
-        self.output = self.output.replace('[ok]\n','')
+        with opener('r')(self.tblout_fname) as tblout_file:
+            self.table_output = tblout_file.readlines()
+        os.remove(self.tblout_fname)
         self.parse_output()
 #        if self.sensitivity == 'max' and len(self.matches) == 0:
 #            print '\nno matches with max sensitivity\n'
@@ -83,13 +89,10 @@ class Hmmerer(object):
 
     def parse_output(self):
         assert len(self.matches) == 0  # um, no particular reason to suspect otherwise a.t.m.
-        outlines = self.output.splitlines()
-        outlines = dropwhile(lambda line: line.find('-TBLOUT-') < 0, outlines)
-        header_line = sanitize_header_line(outlines.next().replace('-TBLOUT-',''))
-            
+        outlines = self.table_output
+        header_line = sanitize_header_line(outlines[0])
         if self.binary == 'hmmscan':
-#            outlines.next()
-            header_line = sanitize_header_line(outlines.next().replace('-TBLOUT-',''))  # NOTE this is the overall *sequence* evalue I'm pulling out here. I don't care a.t.m., but keep it in mind
+            header_line = sanitize_header_line(outlines[1])  # NOTE this is the overall *sequence* evalue I'm pulling out here. I don't care a.t.m., but keep it in mind
             header_line = sanitize_hmmscan_header_line(header_line)
         # make a dict so we don't have to remember the order
         indices = {}
@@ -97,18 +100,24 @@ class Hmmerer(object):
             column = header_line.split()[icol]
             indices[column] = icol
         for outline in outlines:
-            outline = outline.replace('-TBLOUT-','')
             if outline[0] == '#':
                 continue
             outline = outline.split()
             entry = {}
             entry['target_name'] = outline[indices['target_name']]
-            for column in ['hmm_from', 'hmm_to', 'ali_from', 'ali_to']:
-                entry[column] = int(outline[indices[column]])
+            for column in ['hmm_from', 'hmm_to', 'ali_from', 'ali_to']:  # NOTE these are index *one* counting (!!!)
+                if indices[column] < len(outline):
+                    entry[column] = int(outline[indices[column]])
+                else:
+                    print 'wtf',column,indices[column],outline
+                    sys.exit()
             entry['evalue'] = float(outline[indices['evalue']])
             if entry['ali_from'] > entry['ali_to']:
-                print '    skipping reverse match %d %d' % (entry['ali_from'], entry['ali_to'])
+                if self.debug:
+                    print '    skipping reverse match %d %d' % (entry['ali_from'], entry['ali_to'])
                 continue
             self.matches.append(entry)
             if len(self.matches) >= self.n_matches_max:
                 break
+
+        self.matches = sorted(self.matches, key=itemgetter('evalue'))

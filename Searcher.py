@@ -8,11 +8,12 @@ import utils
 
 class Searcher(object):
     """ same ol shit """
-    def __init__(self, query_line, debug=False, n_matches_max=999):
+    def __init__(self, initial_query_seq, debug=False, n_matches_max=999):
         self.n_matches_max = n_matches_max
         self.debug = debug
         self.hmmerdir = '/home/dralph/Dropbox/work/hmmer/hmmer-3.1b1-linux-intel-x86_64'
-        self.seq = query_line['seq']
+        self.seq = initial_query_seq
+        self.query_seqs = {}  # the seq that was actually used for each query (i.e. without excised portions)
         self.current_seq = self.seq  # we will in general excise parts of the original sequence, and store the result in current_seq
         self.n_tries = {}  # how many tries for this region?
         self.matches = {}
@@ -20,6 +21,7 @@ class Searcher(object):
         self.excisions = []
         for region in utils.regions:
             self.n_tries[region] = 0
+            self.query_seqs[region] = ''
             self.matches[region] = []
             self.best_matches[region] = {}
         
@@ -30,22 +32,29 @@ class Searcher(object):
                 (len(self.best_matches['j']) > 0))
         
     def search(self):
+        found_str = ''
+#        print '.',
+        if self.debug:
+            print '\nsearching'
         for region in ['v', 'j', 'd']:  # do d last
             self.get_matches(region)
             if len(self.matches[region]) != 0 and len(self.best_matches[region]) != 0:
+                found_str += region
                 self.excise_match(region)   # if there's a good match cut it out. TODO change 'good' criterion
-        # now try again!
+                if len(self.current_seq) == 0:
+                    return
+        # now try again
         for region in ['v', 'j', 'd']:  # do d last, still
             if not self.is_matched(region):
                 self.get_matches(region)
                 if len(self.matches[region]) != 0 and len(self.best_matches[region]) != 0:
+                    found_str += region
                     self.excise_match(region)   # if there's a good match cut it out. TODO change 'good' criterion
-            if not self.is_matched(region):
-                self.get_matches(region)
-                if len(self.matches[region]) != 0 and len(self.best_matches[region]) != 0:
-                    self.excise_match(region)   # if there's a good match cut it out. TODO change 'good' criterion
+                    if len(self.current_seq) == 0:  # excised the whole sequence
+                        return
                 else:
-                    print '  WARNING no matches found'
+                    pass  #print '  WARNING no matches found',
+        return found_str
 
     def get_matches(self, region, debug=False):
         """ Look for matches for <region>. """
@@ -54,7 +63,7 @@ class Searcher(object):
             sensitivity = 'more'
         elif self.n_tries[region] > 1:
             sensitivity = 'max'
-        hmmerer = Hmmerer(self.hmmerdir, region, self.current_seq, sensitivity=sensitivity)
+        hmmerer = Hmmerer(self.hmmerdir, region, self.current_seq, sensitivity=sensitivity, debug=self.debug, n_matches_max=self.n_matches_max)
         hmmerer.run()
 #        print hmmerer.output
         self.n_tries[region] += 1
@@ -72,30 +81,25 @@ class Searcher(object):
             return self.best_matches[region]['target_name']
 
     def find_best_match(self, hmmerer, region):
-        print '  looking for best match of %d' % len(self.matches[region])
+        if self.debug:
+            print '  looking for best match of %d' % len(self.matches[region])
         best_evalue = 999.0
         for match in self.matches[region]:
-            if match['ali_from'] > match['ali_to']:
+            if match['ali_from'] > match['ali_to']:  # NOTE these are index *one* counting (!!!)
                 print '  REVERSE %d --> %d (skipping)' % (match['ali_from'],match['ali_to'])
                 continue
             self.get_matching_section(hmmerer, match)  # fill output section in this match
             if '.' in match['hmm_seq']:  # remove matches with deletions from consideration
-                print '  eliminating match with deletion %s' % match['hmm_seq'].upper()
+                if self.debug:
+                    print '  eliminating match with deletion %s' % match['hmm_seq'].upper()
                 continue
             if '-' in match['test_seq']:  # remove matches with deletions from consideration
-                print '  eliminating match with deletion %s' % match['test_seq']
+                if self.debug:
+                    print '  eliminating match with deletion %s' % match['test_seq']
                 continue
             if match['evalue'] < best_evalue:
                 best_evalue = match['evalue']
                 self.best_matches[region] = match
-
-        if len(self.matches[region]) > 0:
-            try:
-                assert len(self.best_matches[region]) != 0  # um, was that what I meant to do here?
-            except:
-                print '    ',self.best_matches
-                print '    WARNING matches, but no best matches?'
-#                sys.exit()
 
     def excise_match(self, region):
         """ Remove best_match from current_seq.
@@ -105,21 +109,26 @@ class Searcher(object):
         of the others.
         """
     
-        # convert from 1-start to 0-start indexing
+        # convert from 1-start to 0-start indexing (!!!)
         excise_from = self.best_matches[region]['ali_from'] - 1
         excise_to = self.best_matches[region]['ali_to'] - 1
 
         if region == 'v' and excise_from != 0:
             excise_from = 0
             assert len(self.current_seq[:excise_from]) == 0
-            print '   expanding v excision to zero'
+            if self.debug:
+                print '   expanding v excision to zero'
         if region == 'j' and excise_to != len(self.current_seq) - 1:
             excise_to = len(self.current_seq) - 1
             assert len(self.current_seq[excise_to + 1 :]) == 0
-            print '   expanding j excision to %d' % (len(self.current_seq) - 1)
+            if self.debug:
+                print '   expanding j excision to %d' % (len(self.current_seq) - 1)
 
         self.excisions.append({'region': region, 'from': excise_from, 'to': excise_to})
-        print '    excising from %d to %d: %s --> %s' % (excise_from, excise_to, self.current_seq, self.current_seq[:excise_from] + self.current_seq[excise_to + 1 :])
+        if self.debug:
+            print '    excising from %d to %d: %s --> %s' % (excise_from, excise_to, self.current_seq, self.current_seq[:excise_from] + self.current_seq[excise_to + 1 :])
+
+        self.query_seqs[region] = self.current_seq
         self.current_seq = self.current_seq[:excise_from] + self.current_seq[excise_to + 1 :]
 
     def build_inferred_seq(self, seq, all_germlines, outline):
@@ -180,20 +189,20 @@ class Searcher(object):
             return
         if self.debug:
             print '  getting detailed info for best match %s' % match['target_name']
-        output = takewhile(lambda line: line.find('-TBLOUT-') < 0, hmmerer.output.splitlines())  # verbose output from hmmer
-        output = dropwhile(lambda line: line.find('>> ' + match['target_name']) < 0, output)  # drop until you get to the block on this gene
+        output = dropwhile(lambda line: line.find('>> ' + match['target_name']) < 0, hmmerer.output.splitlines())  # drop until you get to the block on this gene
         try:
             output.next()
         except:
             print hmmerer.output
             assert False
         output = takewhile(lambda line: line.find('>> IGH') < 0, output)  # drop the next block
-        output = dropwhile(lambda line: line.find(match['target_name']) < 0, output)
-        output = takewhile(lambda line: line.find('Internal pipeline') < 0, output)  # kill pipeline statistics
         if self.debug:
             output, debug_output = tee(output)
             for line in debug_output:
                 print '     -->    ',line
+        output = dropwhile(lambda line: line.find(match['target_name']) < 0, output)  # drop the header crap
+        output = takewhile(lambda line: line.find('== domain') < 0, output)  # drop domains after the first one. TODO don't do that
+        output = takewhile(lambda line: line.find('Internal pipeline') < 0, output)  # kill pipeline statistics
         hmm_seq, matching_position_line, test_seq, probabilities = '', '', '', ''
         for line in output:
             # TODO I think this will fail if there's indels in the interior
@@ -201,8 +210,6 @@ class Searcher(object):
                 continue
             # first get the germline line
             line = line.split()
-            if line[0] != match['target_name']:
-                print hmmerer.output
             assert line[0] == match['target_name']
             start_position = line[1]  # start position of this match
             hmm_seq += line[2]

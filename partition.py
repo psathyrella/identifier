@@ -31,13 +31,17 @@ def build_hmms():
         pressfile.writelines(all_lines)
     call(['../binaries/hmmpress', '-f', outdir + '/all.hmm'])
 
+#----------------------------------------------------------------------------------------
 #build_hmms()
-with opener('r')('head-simulated-seqs.csv') as infile:
+infname = 'head-simulated-seqs.csv'
+#infname = 'head-data.csv'  # bzgrep -m100 . /shared/silo_researcher/Matsen_F/MatsenGrp/data/bcr/output_sw/C/01-C-N_merged.tsv.bz2 | sed 's/[ \t][ \t]*/,/g'|cut -f2 -d, > head-data.csv
+with opener('r')(infname) as infile:
     germlines = utils.read_germlines('../../../recombinator')
     reader = csv.DictReader(infile)
     for inline in reader:
         print 'searching'
-        searcher = Searcher(inline, debug=True, n_matches_max=2)
+#        inline['seq'] = inline['seq'][-130:]
+        searcher = Searcher(inline['seq'], debug=True, n_matches_max=2)
         searcher.search()
         inferred_group_str = ''
         true_group_str = ''
@@ -80,4 +84,4 @@ with opener('r')('head-simulated-seqs.csv') as infile:
             print '    ',searcher.best_matches['j']
 #            sys.exit()
 
-#        break
+        break

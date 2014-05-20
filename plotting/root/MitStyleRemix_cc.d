@@ -1,0 +1,51 @@
+
+# DO NOT DELETE
+
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TCanvas.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TPad.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TVirtualPad.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TAttPad.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/Rtypes.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/RConfig.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/RVersion.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/DllImport.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/Rtypeinfo.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/snprintf.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/strlcpy.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TGenericClassInfo.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TSchemaHelper.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TVirtualX.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TNamed.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TObject.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TStorage.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TVersionCheck.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/Riosfwd.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TBuffer.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TString.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TMathBase.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TAttLine.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TAttFill.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TAttText.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TAttMarker.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/GuiTypes.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/Buttons.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TQObject.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TAttCanvas.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TCanvasImp.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TH1.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TAxis.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TAttAxis.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TArrayD.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TArray.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TArrayC.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TArrayS.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TArrayI.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TArrayF.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/Foption.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TVectorFfwd.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TVectorDfwd.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TFitResultPtr.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/TStyle.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/Dropbox/work/hmmer/hmmer-3.1b1-linux-intel-x86_64/identifier/./plotting/root/MitStyleRemix.h
+./plotting/root/MitStyleRemix_cc.so: /home/dralph/root/include/cintdictversion.h /home/dralph/root/include/RVersion.h
+MitStyleRemix_cc__ROOTBUILDVERSION= 5.34/18
